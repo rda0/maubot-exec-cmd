@@ -1,0 +1,39 @@
+name: tag-release
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: tag-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+      - name: Zip
+        run: |
+          zip -9r smartpoll.mbp polls maubot.yaml upload.py
+      - name: Get the version
+        id: get_version
+        run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{steps.get_version.outputs.VERSION}}
+          release_name: Release ${{steps.get_version.outputs.VERSION}}
+          draft: false
+          prerelease: false
+      - name: Upload Release Asset
+        id: upload-release-asset 
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./smartpoll.mbp
+          asset_name: smartpoll-${{steps.get_version.outputs.VERSION}}.mbp
+          asset_content_type: application/zip

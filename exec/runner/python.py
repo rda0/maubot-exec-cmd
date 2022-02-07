@@ -19,13 +19,15 @@ from io import IOBase, StringIO
 import contextlib
 import traceback
 import asyncio
+import inspect
 import ast
 import sys
 
-from mautrix.util.manhole import asyncify
+from mautrix.util.manhole import compile_async
 
 from .base import Runner, OutputType, AsyncTextOutput
 
+TOP_LEVEL_AWAIT = sys.version_info >= (3, 8)
 
 class SyncTextProxy(AsyncTextOutput):
     writers: Dict[OutputType, 'ProxyWriter']
@@ -116,7 +118,7 @@ class PythonRunner(Runner):
         line: traceback.FrameSummary
         for i, line in enumerate(tb):
             if line.filename == "<input>":
-                line.name = "<module>"
+                line.name = "<node>"
                 tb = tb[i:]
                 break
 
@@ -127,17 +129,34 @@ class PythonRunner(Runner):
     async def run(self, code: str, stdin: str = "", loop: Optional[asyncio.AbstractEventLoop] = None
                   ) -> AsyncGenerator[Tuple[OutputType, Any], None]:
         loop = loop or asyncio.get_event_loop()
-        codeobj = asyncify(compile(code, "<input>", "exec", optimize=1, flags=ast.PyCF_ONLY_AST),
-                           module="<input>")
+        codeobj = compile_async(code)
         namespace = {**self.namespace} if self.per_run_namespace else self.namespace
-        exec(codeobj, namespace)
-        with self._redirect_io(SyncTextProxy(loop), StringIO(stdin)) as output:
-            task = asyncio.ensure_future(self._wait_task(namespace, output), loop=loop)
-            async for part in output:
-                yield part
-            try:
-                return_value = await task
-            except Exception:
-                yield (OutputType.EXCEPTION, ExcInfo(*sys.exc_info()))
-            else:
-                yield (OutputType.RETURN, return_value)
+        if TOP_LEVEL_AWAIT:
+            with self._redirect_io(SyncTextProxy(loop), StringIO(stdin)) as output:
+                try:
+                    value = eval(codeobj, namespace)
+                finally:
+                    output.close()
+                async for part in output:
+                    yield part
+                try:
+                    if codeobj.co_flags & inspect.CO_COROUTINE:
+                        return_value = await value
+                    else:
+                        return_value = value
+                except Exception:
+                    yield (OutputType.EXCEPTION, ExcInfo(*sys.exc_info()))
+                else:
+                    yield (OutputType.RETURN, return_value)
+        else:
+            exec(codeobj, namespace)
+            with self._redirect_io(SyncTextProxy(loop), StringIO(stdin)) as output:
+                task = asyncio.create_task(self._wait_task(namespace, output))
+                async for part in output:
+                    yield part
+                try:
+                    return_value = await task
+                except Exception:
+                    yield (OutputType.EXCEPTION, ExcInfo(*sys.exc_info()))
+                else:
+                    yield (OutputType.RETURN, return_value)
