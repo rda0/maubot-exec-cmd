@@ -13,7 +13,7 @@ jobs:
         uses: actions/checkout@v2
       - name: Zip
         run: |
-          zip -9r smartpoll.mbp polls maubot.yaml upload.py
+          zip -9r exec.mbp exec maubot.yaml base-config.yaml
       - name: Get the version
         id: get_version
         run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
@@ -34,6 +34,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./smartpoll.mbp
-          asset_name: smartpoll-${{steps.get_version.outputs.VERSION}}.mbp
+          asset_path: ./exec.mbp
+          asset_name: exec-${{steps.get_version.outputs.VERSION}}.mbp
           asset_content_type: application/zip
