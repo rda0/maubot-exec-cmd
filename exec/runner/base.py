@@ -33,9 +33,9 @@ class AsyncTextOutput:
     closed: bool
 
     def __init__(self, loop: Optional[AbstractEventLoop] = None) -> None:
-        self.loop = loop or get_event_loop()
+        self.loop = get_event_loop()
         self.read_task = None
-        self.queue = Queue(loop=self.loop)
+        self.queue = Queue()
         self.closed = False
 
     def __aiter__(self) -> 'AsyncTextOutput':

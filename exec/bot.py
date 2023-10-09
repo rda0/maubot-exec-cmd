@@ -97,7 +97,7 @@ class ExecBot(Plugin):
              or not evt.content.formatted_body)):
             return
 
-        command = EntityParser.parse(evt.content.formatted_body)
+        command = await EntityParser().parse(evt.content.formatted_body)
         entity: SimpleEntity
         code: Optional[str] = None
         lang: Optional[str] = None

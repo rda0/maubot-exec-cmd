@@ -80,7 +80,7 @@ class ShellRunner(Runner):
                   ) -> AsyncGenerator[Tuple[OutputType, Union[str, int]], None]:
         loop = loop or asyncio.get_event_loop()
         output = AsyncTextProxy()
-        proc = await asyncio.create_subprocess_shell(code, loop=loop,
+        proc = await asyncio.create_subprocess_shell(code, 
                                                      stdin=asyncio.subprocess.PIPE,
                                                      stdout=asyncio.subprocess.PIPE,
                                                      stderr=asyncio.subprocess.PIPE)
@@ -91,6 +91,7 @@ class ShellRunner(Runner):
         waiter = asyncio.ensure_future(self._wait_proc(proc, output), loop=loop)
         async for part in output:
             yield part
+        print(output)
         yield (OutputType.RETURN, await waiter)
 
     def format_exception(self, exc_info: Any) -> Tuple[Optional[str], Optional[str]]:
