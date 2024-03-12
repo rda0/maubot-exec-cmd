@@ -1,9 +1,9 @@
 maubot: 0.1.0
-id: xyz.maubot.exec
-version: 0.2.0
+id: ch.ethz.phys.exec-cmd
+version: 0.0.1
 license: AGPL-3.0-or-later
 modules:
-- exec
-main_class: ExecBot
+- exec_cmd
+main_class: ExecCmdBot
 extra_files:
 - base-config.yaml

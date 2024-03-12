@@ -13,7 +13,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
-from typing import Type, Set, Optional, Any
+from typing import Type, Set, Optional, Any, Dict
 from io import StringIO
 from html import escape as escape_orig
 from time import time
@@ -24,7 +24,7 @@ from mautrix.types import EventType, UserID, TextMessageEventContent, MessageTyp
 from mautrix.util.config import BaseProxyConfig, ConfigUpdateHelper
 from mautrix.util.formatter import MatrixParser, EntityString, SimpleEntity, EntityType
 from maubot import Plugin, MessageEvent
-from maubot.handlers import event
+from maubot.handlers import event, command
 
 from .runner import PythonRunner, ShellRunner, OutputType
 
@@ -33,28 +33,38 @@ def escape(val: Optional[str]) -> Optional[str]:
     return escape_orig(val) if val is not None else None
 
 
+class ConfigValidationError(Exception):
+    pass
+
+
 class EntityParser(MatrixParser[EntityString]):
     fs = EntityString[SimpleEntity, EntityType]
 
 
 class Config(BaseProxyConfig):
     def do_update(self, helper: ConfigUpdateHelper) -> None:
-        helper.copy("prefix")
+        helper.copy("prefix_exec")
+        helper.copy("prefix_cmd")
         helper.copy("userbot")
-        helper.copy("whitelist")
+        helper.copy("whitelist_exec")
+        helper.copy("whitelist_cmd")
         helper.copy("output.interval")
         helper.copy("output.template_args")
         helper.copy("output.plaintext")
         helper.copy("output.html")
+        helper.copy("commands")
 
 
-class ExecBot(Plugin):
-    whitelist: Set[UserID]
+class ExecCmdBot(Plugin):
+    whitelist_exec: Set[UserID]
+    whitelist_cmd: Set[UserID]
     userbot: bool
-    prefix: str
+    prefix_exec: str
+    prefix_cmd: str
     output_interval: int
     plaintext_template: Template
     html_template: Template
+    commands: Dict
 
     @classmethod
     def get_config_class(cls) -> Type[BaseProxyConfig]:
@@ -65,13 +75,18 @@ class ExecBot(Plugin):
 
     def on_external_config_update(self) -> None:
         self.config.load_and_update()
-        self.whitelist = set(self.config["whitelist"])
+        self.whitelist_exec = set(self.config["whitelist_exec"])
+        self.whitelist_cmd = set(self.config["whitelist_cmd"])
         self.userbot = self.config["userbot"]
-        self.prefix = self.config["prefix"]
+        self.prefix_exec = self.config["prefix_exec"]
+        self.prefix_cmd = self.config["prefix_cmd"]
         self.output_interval = self.config["output.interval"]
         template_args = self.config["output.template_args"]
         self.plaintext_template = Template(self.config["output.plaintext"], **template_args)
         self.html_template = Template(self.config["output.html"], **template_args)
+        self.commands = self.config["commands"]
+        if any(" " in cmd for cmd in self.commands):
+            raise ConfigValidationError("commands keys contain spaces")
 
     def format_status(self, code: str, language: str, output: str = "", output_html: str = "",
                       return_value: Any = None, exception_header: Optional[str] = None,
@@ -89,29 +104,7 @@ class ExecBot(Plugin):
                 exception_header=escape(exception_header)))
         return content
 
-    @event.on(EventType.ROOM_MESSAGE)
-    async def exec(self, evt: MessageEvent) -> None:
-        if ((evt.content.msgtype != MessageType.TEXT
-             or evt.sender not in self.whitelist
-             or not evt.content.body.startswith(self.prefix)
-             or not evt.content.formatted_body)):
-            return
-
-        command = await EntityParser().parse(evt.content.formatted_body)
-        entity: SimpleEntity
-        code: Optional[str] = None
-        lang: Optional[str] = None
-        stdin: str = ""
-        for entity in command.entities:
-            if entity.type != EntityType.PREFORMATTED:
-                continue
-            current_lang = entity.extra_info["language"].lower()
-            value = command.text[entity.offset:entity.offset + entity.length]
-            if not code:
-                code = value
-                lang = current_lang
-            elif current_lang == "stdin" or current_lang == "input":
-                stdin += value
+    async def exec_runner(self, evt: MessageEvent, lang: str, code: str, stdin: str = "") -> None:
         if not code or not lang:
             return
 
@@ -170,3 +163,51 @@ class ExecBot(Plugin):
                                      msgtype=msgtype)
         content.set_edit(output_event_id)
         await self.client.send_message(evt.room_id, content)
+
+    @event.on(EventType.ROOM_MESSAGE)
+    async def exec(self, evt: MessageEvent) -> None:
+        if ((evt.content.msgtype != MessageType.TEXT
+             or evt.sender not in self.whitelist_exec
+             or not evt.content.body.startswith(self.prefix_exec)
+             or not evt.content.formatted_body)):
+            return
+
+        command = await EntityParser().parse(evt.content.formatted_body)
+        entity: SimpleEntity
+        code: Optional[str] = None
+        lang: Optional[str] = None
+        stdin: str = ""
+        for entity in command.entities:
+            if entity.type != EntityType.PREFORMATTED:
+                continue
+            current_lang = entity.extra_info["language"].lower()
+            value = command.text[entity.offset:entity.offset + entity.length]
+            if not code:
+                code = value
+                lang = current_lang
+            elif current_lang == "stdin" or current_lang == "input":
+                stdin += value
+        if not code or not lang:
+            return
+
+        await self.exec_runner(evt, lang, code, stdin=stdin)
+
+    @command.new(name=lambda self: self.prefix_cmd)
+    @command.argument("command", pass_raw=True, required=True)
+    async def cmd(self, evt: MessageEvent, command: str) -> None:
+        if evt.sender not in self.whitelist_cmd:
+            return
+
+        if not command:
+            available = ["`" + c.replace("_", " ") + "`" for c in self.commands.keys()]
+            available_list = "- " + "\n- ".join(available)
+            await evt.reply(f"available commands:\n{available_list}")
+            return
+
+        key: str
+        key = command.replace(" ", "_")
+        if key not in self.commands.keys():
+            await evt.reply("unknown command")
+            return
+
+        await self.exec_runner(evt, "sh", self.commands[key])
