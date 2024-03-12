@@ -33,7 +33,7 @@ Clone and setup the maubot plugin:
 git clone https://gitlab.phys.ethz.ch/isgphys/maubot-exec-cmd.git git
 ln -s git/maubot.yaml
 ln -s git/exec_cmd
-cp standalone-example-config.yaml config.yaml
+cp git/standalone-example-config.yaml config.yaml
 ```
 
 Generate an `access_token` and `device_id` (login) using the
