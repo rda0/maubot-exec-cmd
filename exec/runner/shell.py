@@ -91,7 +91,6 @@ class ShellRunner(Runner):
         waiter = asyncio.ensure_future(self._wait_proc(proc, output), loop=loop)
         async for part in output:
             yield part
-        print(output)
         yield (OutputType.RETURN, await waiter)
 
     def format_exception(self, exc_info: Any) -> Tuple[Optional[str], Optional[str]]:

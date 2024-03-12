@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Dict, Any, Optional, Tuple, AsyncGenerator, Type, NamedTuple
-from types import TracebackType
+from types import TracebackType, CodeType
 from io import IOBase, StringIO
 import contextlib
 import traceback
@@ -23,7 +23,7 @@ import inspect
 import ast
 import sys
 
-from mautrix.util.manhole import compile_async
+from mautrix.util.manhole import insert_returns, ASYNC_EVAL_WRAPPER
 
 from .base import Runner, OutputType, AsyncTextOutput
 
@@ -126,10 +126,24 @@ class PythonRunner(Runner):
                 f"{''.join(traceback.format_list(tb))}"
                 f"{self._format_exc(exc_info.exc)}")
 
+    def compile_async(self, tree: ast.AST) -> CodeType:
+        flags = 0
+        if TOP_LEVEL_AWAIT:
+            flags += ast.PyCF_ALLOW_TOP_LEVEL_AWAIT
+            node_to_compile = tree
+        else:
+            insert_returns(tree.body)
+            wrapper_node: ast.AST = ast.parse(ASYNC_EVAL_WRAPPER, "<async eval wrapper>", "single")
+            method_stmt = wrapper_node.body[0]
+            try_stmt = method_stmt.body[0]
+            try_stmt.body = tree.body
+            node_to_compile = wrapper_node
+        return compile(node_to_compile, "<input>", "exec", optimize=1, flags=flags)
+
     async def run(self, code: str, stdin: str = "", loop: Optional[asyncio.AbstractEventLoop] = None
                   ) -> AsyncGenerator[Tuple[OutputType, Any], None]:
         loop = loop or asyncio.get_event_loop()
-        codeobj = compile_async(code)
+        codeobj = self.compile_async(code)
         namespace = {**self.namespace} if self.per_run_namespace else self.namespace
         if TOP_LEVEL_AWAIT:
             with self._redirect_io(SyncTextProxy(loop), StringIO(stdin)) as output:
