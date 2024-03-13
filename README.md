@@ -44,7 +44,7 @@ with a cli http tool such as [httpie](https://httpie.io/):
 http POST 'https://example.com/_matrix/client/v3/login' <<<'{"identifier":{"type":"m.id.user","user":"botusername"},"initial_device_display_name":"Standalone Bot","password":"ilovebananas","type":"m.login.password"}'
 ```
 
-Invite the bot user to your room and note the `<roomid_or_alias>`.
+Invite the bot user to your (preferably unencrypted) room and note the `<roomid_or_alias>`.
 
 Manually join the bot user to the room using the
 [client-server api](https://spec.matrix.org/latest/client-server-api/#post_matrixclientv3joinroomidoralias):
@@ -104,6 +104,41 @@ Available bot commands with the above:
 !cmd device off
 !cmd device start
 ```
+
+### Systemd
+
+To automatically start the bot on boot create a systemd service:
+
+```bash
+cp maubot.service /etc/systemd/system
+systemctl daemon-reload
+systemctl enable maubot.service
+systemctl start maubot.service
+```
+
+To view the log:
+
+```bash
+journalctl -fu maubot.service | ccze
+```
+
+### Encryption
+
+Maubot supports encryption, but encryption is buggy and could lead to problems.
+Just use an unencrypted room for bots and keep your encrypted rooms secure,
+as it is generally not advisable to include bots in encrypted rooms for obvious security reasons.
+
+For encryption problems try the following:
+
+- Kick the bot
+- Stop the bot
+- `rm /opt/maubot/bot.db`
+- Optional: logout the bot's current device
+- Generate a new `access_token` and `device_id`
+- Update it the config
+- Start the bot
+- Invite the bot
+- Join the bot
 
 
 ## exec

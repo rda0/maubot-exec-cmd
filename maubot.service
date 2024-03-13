@@ -1,0 +1,19 @@
+[Unit]
+Description=Maubot Standalone
+
+[Service]
+Type=simple
+NotifyAccess=main
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=3
+User=maubot
+Group=maubot
+WorkingDirectory=/opt/maubot
+ExecStart=/opt/maubot/env/bin/python3 -m maubot.standalone
+SyslogIdentifier=maubot
+ReadOnlyDirectories=/
+ReadWriteDirectories=/opt/maubot
+
+[Install]
+WantedBy=multi-user.target
